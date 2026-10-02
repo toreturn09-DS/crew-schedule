@@ -1,5 +1,5 @@
 // 서비스워커: 오프라인 실행 + 안드로이드 "공유하기" 수신
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `crew-shell-${VERSION}`;
 const VENDOR = 'crew-vendor-v1'; // OCR 엔진(용량 큼) — 앱 업데이트와 별도로 유지
 
