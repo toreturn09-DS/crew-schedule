@@ -117,6 +117,50 @@ function dutyLabel(code) {
   return DUTY_CODES[code] || '근무';
 }
 
+// ───────────────────────── 트립 분석: 퀵턴(당일) / 2일 이상
+
+const isHomeAirport = code => { const a = getAirport(code); return !!a && a.tz === KST_TZ; };
+
+// 비행·체류를 "국내 출발 → 국내 도착" 단위(트립)로 묶음 → WeakMap(항목 → 트립)
+//  퀵턴 = 트립 전체가 한 날짜 칸 안에서 끝남, 그 외(체류·자정 넘김) = 2일 이상
+function computeTrips(days) {
+  const map = new WeakMap();
+  const trips = [];
+  let cur = null;
+  const close = () => { if (cur) trips.push(cur); cur = null; };
+  for (const date of Object.keys(days).sort()) {
+    for (const it of days[date]) {
+      if (it.type !== 'flight' && it.type !== 'layover') { close(); continue; }
+      // 국내에서 새로 출발하면 새 트립 (귀국편이 빠진 이전 트립은 닫음)
+      if (cur && it.type === 'flight' && it.dep && isHomeAirport(it.from)) close();
+      if (!cur) cur = { dates: new Set(), complete: false };
+      cur.dates.add(date);
+      map.set(it, cur);
+      if (it.type === 'flight' && it.arr && isHomeAirport(it.to)) { cur.complete = true; close(); }
+    }
+  }
+  close();
+  for (const t of trips) {
+    const ds = [...t.dates].sort();
+    t.start = ds[0];
+    t.end = ds[ds.length - 1];
+    t.nDays = dayDiff(t.start, t.end) + 1;
+    t.kind = t.nDays === 1 && t.complete ? 'quick' : 'multi';
+  }
+  return map;
+}
+
+function tripOf(it) {
+  return state.trips ? state.trips.get(it) : null;
+}
+
+function tripTagHtml(t) {
+  if (!t) return '';
+  if (t.kind === 'quick') return '<span class="trip-tag quick">퀵턴(당일)</span>';
+  const range = t.nDays > 1 ? ` · ${mdw(t.start)}~${mdw(t.end)}` : '';
+  return `<span class="trip-tag multi">${t.complete ? `${t.nDays}일 일정` : '2일 이상'}${range}</span>`;
+}
+
 // ───────────────────────── 달력 칸 안 (간략 표기)
 
 function evCompactHtml(date, it) {
@@ -136,7 +180,8 @@ function evCompactHtml(date, it) {
       const kaT = ka ? ka.time + dayMark(date, ka.date) : '';
       kstLine = `<div class="tk"><span class="k-badge">한</span>${span(kdT, kaT)}</div>`;
     }
-    return `<div class="ev flight${warn}">
+    const trip = tripOf(it);
+    return `<div class="ev flight${trip ? ' ' + trip.kind : ''}${warn}">
       <div><span class="no">${esc(it.flightNo || '편명?')}</span>${dh}</div>
       <div class="route">${esc(shortName(it.from))}→${esc(shortName(it.to))}</div>
       <div class="t">${localT}</div>${kstLine}
@@ -188,8 +233,10 @@ function cardHtml(date, it, idx, editable) {
     // 공항 미등록이면 계산 없이 현지시간만
     const legTime = (calc, raw, missing) =>
       calc ? timePair(date, calc) : raw ? `<div class="times">현지 ${esc(raw)}</div>` : `<div class="times">${missing}</div>`;
-    return `<div class="card">
+    const trip = tripOf(it);
+    return `<div class="card${trip ? ' ' + trip.kind : ''}">
       <div class="card-head">✈ ${esc(it.flightNo || '편명?')} ${it.deadhead ? '<span class="tag">편승(TVL)</span>' : ''} ${warnTag}${actions}</div>
+      <div class="trip-line">${tripTagHtml(trip)}</div>
       <div class="leg">
         <div class="lbl">출발</div><div><div class="apt">${aptLine(it.from, c.fromA)}</div>${legTime(c.dep, it.dep, '(전날 칸에 표시)')}</div>
         <div class="lbl">도착</div><div><div class="apt">${aptLine(it.to, c.toA)}</div>${legTime(c.arr, it.arr, '(다음날 칸에 표시)')}</div>
@@ -230,6 +277,7 @@ function render() {
   if (drafting) renderDraftBar();
 
   const days = daysSource();
+  state.trips = computeTrips(days);
   const prefix = monthKey(year, month);
   const hasAny = Object.keys(days).some(k => k.startsWith(prefix));
   $('empty').hidden = hasAny;
@@ -592,6 +640,10 @@ function openHelp() {
     <p style="font-size:13px;color:var(--muted)">
       칸 안의 검정 시간은 각 공항 <b>현지시간</b>, <span class="kst"><b class="kst">한</b> 빨간 시간</span>은 <b>한국시간</b>입니다.
       한국과 시차가 없는 구간(일본 등)은 한국시간 줄을 생략합니다. <sup>+1</sup>은 다음날입니다.
+    </p>
+    <p style="font-size:13px;color:var(--muted)">
+      비행 색상: <b style="color:var(--quick)">주황 = 퀵턴</b>(국내 출발~국내 도착이 하루 안에 끝남),
+      <b style="color:var(--flight)">파랑 = 2일 이상</b>(체류가 있거나 자정을 넘김). 날짜를 누르면 일정 기간이 표시됩니다.
     </p>
     <div class="sheet-foot"><button class="btn primary" data-act="close">닫기</button></div>`,
   e => { if (e.target.closest('[data-act="close"]')) closeSheet(); });

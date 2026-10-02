@@ -2,6 +2,8 @@
   --primary: #1565c0;
   --flight: #1e88e5;
   --flight-bg: #e3f0fc;
+  --quick: #ef6c00;
+  --quick-bg: #fff1e0;
   --lo: #4fb3e8;
   --lo-bg: #e6f6fd;
   --off: #9eb31c;
@@ -56,6 +58,7 @@ button { font: inherit; color: inherit; }
 .legend-time { margin-left: auto; }
 .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .sw.flight { background: var(--flight); }
+.sw.quick { background: var(--quick); }
 .sw.lo { background: var(--lo); }
 .sw.off { background: var(--off); }
 .kst { color: var(--kst); }
@@ -125,6 +128,8 @@ b.kst, .k-badge {
 .ev .t, .ev .tk { font-variant-numeric: tabular-nums; white-space: normal; overflow: visible; }
 .ev .tk { color: var(--kst); }
 .ev sup { font-size: 7px; vertical-align: 3px; margin-left: 0; }
+.ev.flight.quick { border-left-color: var(--quick); background: var(--quick-bg); }
+.ev.flight.quick .no, .ev.flight.quick .tag { color: #c43e00; }
 .ev.lo { border-left-color: var(--lo); background: var(--lo-bg); }
 .ev.off { border-left-color: var(--off); background: var(--off-bg); color: #5d6b00; font-weight: 700; text-align: center; }
 .ev.other { border-left-color: var(--other); background: #f3eeec; }
@@ -139,7 +144,14 @@ b.kst, .k-badge {
 
 /* ── 상세 카드 */
 .card { border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--flight-bg); border-left: 4px solid var(--flight); }
+.card.quick { background: var(--quick-bg); border-left-color: var(--quick); }
+.card.quick .card-head .tag { color: #c43e00; }
 .card.lo { background: var(--lo-bg); border-left-color: var(--lo); }
+.trip-line:empty { display: none; }
+.trip-line { margin-top: 4px; }
+.trip-tag { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; color: #fff; }
+.trip-tag.quick { background: var(--quick); }
+.trip-tag.multi { background: var(--flight); }
 .card.off { background: var(--off-bg); border-left-color: var(--off); }
 .card.other { background: #f3eeec; border-left-color: var(--other); }
 .card-head { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 15px; }
