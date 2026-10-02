@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1565c0">
+  <meta name="description" content="승무원 스케줄 캡처를 불러와 공항명 한글화 + 현지/한국시간을 함께 보여주는 달력">
+  <title>크루 스케줄</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn" id="prevBtn" aria-label="이전 달">‹</button>
+    <h1 id="monthTitle">-</h1>
+    <button class="icon-btn" id="nextBtn" aria-label="다음 달">›</button>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="viewBtn" aria-label="보기 전환" title="달력/목록">☰</button>
+    <button class="icon-btn" id="menuBtn" aria-label="메뉴">⋮</button>
+  </header>
+
+  <!-- 가져오기 확인 배너 -->
+  <section id="draftBar" class="draft-bar" hidden>
+    <div class="draft-row">
+      <strong>가져온 결과 확인</strong>
+      <select id="draftYear" aria-label="연도"></select>
+      <select id="draftMonth" aria-label="월"></select>
+    </div>
+    <div class="draft-row">
+      <span id="draftInfo"></span>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="draftCancel">취소</button>
+      <button class="btn primary" id="draftSave">저장</button>
+    </div>
+  </section>
+
+  <div class="legend">
+    <span><i class="sw flight"></i>비행</span>
+    <span><i class="sw lo"></i>체류</span>
+    <span><i class="sw off"></i>휴무</span>
+    <span class="legend-time">현지시간 · <b class="kst">한</b> 한국시간</span>
+  </div>
+
+  <main>
+    <div id="calendar" class="calendar"></div>
+    <div id="list" class="list" hidden></div>
+    <div id="empty" class="empty" hidden>
+      <p>이 달의 스케줄이 없습니다.</p>
+      <p>아래 <b>＋</b> 버튼으로 스케줄 캡처 이미지를 가져오세요.</p>
+    </div>
+  </main>
+
+  <button class="fab" id="importBtn" aria-label="스케줄 캡처 가져오기">＋</button>
+  <input type="file" id="fileInput" accept="image/*" hidden>
+  <input type="file" id="restoreInput" accept="application/json,.json" hidden>
+
+  <!-- 진행 상태 -->
+  <div class="overlay" id="progress" hidden>
+    <div class="progress-box">
+      <div class="spinner"></div>
+      <p id="progressText">분석 중…</p>
+      <div class="bar"><div id="progressBar"></div></div>
+      <p class="hint">처음 한 번은 문자 인식 엔진(약 7MB)을 내려받습니다.</p>
+    </div>
+  </div>
+
+  <!-- 하단 시트 (날짜 상세 / 편집 / 메뉴 공용) -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <section class="sheet" id="sheet" hidden>
+    <div class="sheet-handle"></div>
+    <div id="sheetBody"></div>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="vendor/tesseract/tesseract.min.js"></script>
+  <script src="js/airports.js"></script>
+  <script src="js/tz.js"></script>
+  <script src="js/ocr.js"></script>
+  <script src="js/parse.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
