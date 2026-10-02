@@ -1,11 +1,11 @@
 // 서비스워커: 오프라인 실행 + 안드로이드 "공유하기" 수신
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `crew-shell-${VERSION}`;
 const VENDOR = 'crew-vendor-v1'; // OCR 엔진(용량 큼) — 앱 업데이트와 별도로 유지
 
 const SHELL_FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
-  'js/airports.js', 'js/tz.js', 'js/ocr.js', 'js/parse.js', 'js/app.js',
+  'js/airports.js', 'js/tz.js', 'js/ocr.js', 'js/pdf.js', 'js/parse.js', 'js/app.js',
   'vendor/tesseract/tesseract.min.js',
   'icons/icon-192.png', 'icons/icon-512.png',
 ];
@@ -33,7 +33,8 @@ self.addEventListener('fetch', e => {
       const file = form.get('image');
       if (file) {
         const cache = await caches.open('crew-share');
-        await cache.put('shared-image', new Response(file, { headers: { 'Content-Type': file.type || 'image/png' } }));
+        const type = file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'image/png');
+        await cache.put('shared-image', new Response(file, { headers: { 'Content-Type': type } }));
       }
       return Response.redirect('./?shared=1', 303);
     })());

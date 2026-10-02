@@ -16,7 +16,7 @@ const BAR_PROTOTYPES = [
 
 // 근무/휴무 코드 → 한글 표시
 const DUTY_CODES = {
-  ADO: '휴무', ATDO: '휴무', RDO: '휴무', DO: '휴무', OFF: '휴무', XDO: '휴무',
+  ADO: '휴무', ATDO: '휴무', RDO: '휴무', OFF: '휴무', XDO: '휴무',
   SBY: '대기', STBY: '대기', RSV: '대기', HSBY: '대기',
   VAC: '휴가', AL: '휴가', LV: '휴가', ALV: '휴가',
   TRG: '교육', TRN: '교육', SIM: '교육', GRD: '교육', ETC: '교육',
@@ -53,65 +53,133 @@ function median(arr) {
 }
 
 // 세로선 7칸(8개 선) 찾기
+//  캡처에 상태바·메뉴 등이 섞여도, 가로/세로 화면이어도 되도록
+//  "끊기지 않고 이어진 세로선" 후보 중 간격이 일정한 8개(최소 6개)를 고름
+//  → { cols: [x0..x7], top, bottom } (top/bottom = 세로선이 있는 구간 = 달력 영역)
 function detectColumns(g, W, H, k) {
+  const minRun = Math.max(24, H * 0.04);
+  const maxGap = Math.max(2, k);
+  const runs = new Array(W).fill(null);
   const cand = [];
   for (let x = k; x < W - k; x++) {
-    let n = 0;
+    let best = null, start = -1, last = -1;
+    const close = () => { if (start >= 0 && (!best || last - start > best[1] - best[0])) best = [start, last]; };
     for (let y = 0; y < H; y++) {
       const o = y * W + x;
-      if (g[o] < Math.min(g[o - k], g[o + k]) - 3) n++;
+      if (g[o] < Math.min(g[o - k], g[o + k]) - 3) {
+        if (start < 0 || y - last > maxGap + 1) { close(); start = y; }
+        last = y;
+      }
     }
-    if (n / H > 0.5) cand.push(x);
+    close();
+    if (best && best[1] - best[0] >= minRun) { runs[x] = best; cand.push(x); }
   }
-  const xs = clusterRuns(cand);
-  const minGap = W / 12;
-  const diffs = [];
-  for (let i = 1; i < xs.length; i++) if (xs[i] - xs[i - 1] > minGap) diffs.push(xs[i] - xs[i - 1]);
-  if (!diffs.length) return null;
-  const d = median(diffs);
+  // 인접 x 묶기 → 각 묶음의 대표 위치와 가장 긴 구간
+  const groups = [];
+  for (const x of cand) {
+    const gp = groups[groups.length - 1];
+    if (gp && x - gp.x1 <= 1) { gp.x1 = x; if (runs[x][1] - runs[x][0] > gp.run[1] - gp.run[0]) gp.run = runs[x]; }
+    else groups.push({ x0: x, x1: x, run: runs[x] });
+  }
+  for (const gp of groups) { gp.x = Math.round((gp.x0 + gp.x1) / 2); gp.len = gp.run[1] - gp.run[0]; }
+  if (groups.length < 6) return null;
 
-  // 간격이 d로 일정한 가장 긴 사슬
-  let best = [];
-  for (let i = 0; i < xs.length; i++) {
-    const chain = [xs[i]];
-    for (let j = i + 1; j < xs.length; j++) {
-      const gap = xs[j] - chain[chain.length - 1];
-      if (Math.abs(gap - d) <= d * 0.05) chain.push(xs[j]);
-      else if (gap > d * 1.05) break;
+  // 간격 d로 일정하게 이어지는 사슬 탐색 (칸 폭 ≥ 화면 폭/16)
+  const overlap = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]);
+  let best = null, bestScore = -1;
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      const d = groups[j].x - groups[i].x;
+      if (d < W / 16) continue;
+      if (d > W / 5.5) break;
+      const chain = [groups[i]];
+      let cur = groups[i], step = d;
+      for (;;) {
+        const want = cur.x + step, tol = Math.max(3, step * 0.04);
+        let nx = null;
+        for (const gp of groups) {
+          if (Math.abs(gp.x - want) <= tol && overlap(gp.run, groups[i].run) > groups[i].len * 0.5 &&
+              (!nx || Math.abs(gp.x - want) < Math.abs(nx.x - want))) nx = gp;
+        }
+        if (!nx) break;
+        chain.push(nx);
+        step = (nx.x - chain[0].x) / (chain.length - 1); // 평균 간격으로 갱신
+        cur = nx;
+        if (chain.length === 8) break;
+      }
+      if (chain.length < 6) continue;
+      const score = chain.length * 1e7 + chain.reduce((sum, gp) => sum + gp.len, 0);
+      if (score > bestScore) { bestScore = score; best = chain; }
     }
-    if (chain.length > best.length) best = chain;
   }
-  if (best.length < 6) return null;
+  if (!best) return null;
+  const d = (best[best.length - 1].x - best[0].x) / (best.length - 1);
+  const top = median(best.map(gp => gp.run[0]));
+  const bottom = median(best.map(gp => gp.run[1]));
+  let xs = best.map(gp => gp.x);
+
   // 바깥 테두리가 안 잡힌 경우 보정
-  while (best.length < 8 && best[0] - d >= -2) best.unshift(Math.max(0, best[0] - d));
-  while (best.length < 8 && best[best.length - 1] + d <= W + 2) best.push(Math.min(W - 1, best[best.length - 1] + d));
-  if (best.length > 8) best = best.slice(0, 8);
-  return best.length === 8 ? best : null;
+  while (xs.length < 8 && xs[0] - d >= -2) xs.unshift(Math.max(0, Math.round(xs[0] - d)));
+  while (xs.length < 8 && xs[xs.length - 1] + d <= W + 2) xs.push(Math.min(W - 1, Math.round(xs[xs.length - 1] + d)));
+  return xs.length === 8 ? { cols: xs, top, bottom } : null;
 }
 
 // 가로선 찾기 → 주(week) 행
-function detectRows(g, W, H, k, cols) {
+function detectRows(g, W, H, k, cols, top = 0, bottom = H) {
   const cand = [];
-  for (let y = k; y < H - k; y++) {
+  const colW = (cols[7] - cols[0]) / 7;
+  // 세로선이 중간에 끊겨 top/bottom이 짧게 잡혀도 되도록 넉넉히 탐색 (행 검증으로 걸러냄)
+  const y0 = Math.max(k, Math.round(top - colW * 1.5)), y1 = Math.min(H - k, Math.round(bottom + colW * 2.5));
+  for (let y = y0; y < y1; y++) {
     let okCols = 0;
     for (let c = 0; c < 7; c++) {
       const x0 = cols[c] + k + 1, x1 = cols[c + 1] - k - 1;
       let n = 0;
-      for (let x = x0; x < x1; x++) {
-        const o = y * W + x;
-        if (g[o] < Math.min(g[o - k * W], g[o + k * W]) - 3) n++;
-      }
-      if (n / (x1 - x0) >= 0.95) okCols++;
+      const on = x => { const o = y * W + x; return g[o] < Math.min(g[o - k * W], g[o + k * W]) - 3; };
+      for (let x = x0; x < x1; x++) if (on(x)) n++;
+      // 진짜 칸선은 양 끝이 세로선까지 닿음 (막대·상자 테두리는 칸 안쪽에서 끝남)
+      const ends = [x0, x0 + 1, x1 - 1, x1 - 2].filter(on).length;
+      if (n / (x1 - x0) >= 0.95 && ends >= 3) okCols++;
     }
     if (okCols >= 6) cand.push(y);
   }
+  // 세로선의 시작/끝도 경계로 사용 (요일 줄 아래 선이 연해서 놓치는 경우 대비)
   const ys = clusterRuns(cand);
-  const colW = (cols[7] - cols[0]) / 7;
+  for (const edge of [top, bottom]) {
+    if (edge > 0 && edge < H && !ys.some(y => Math.abs(y - edge) <= 2 * k + 2)) ys.push(edge);
+  }
+  ys.sort((a, b) => a - b);
+
+  // 행 안에 실제로 달력 세로선이 지나가는지 확인 (달력 밖의 표·구분선 제외)
+  const vline = (x, y) => {
+    for (let dx = -2; dx <= 2; dx++) {
+      const o = y * W + x + dx;
+      if (g[o] < Math.min(g[o - k], g[o + k]) - 3) return true;
+    }
+    return false;
+  };
+  const hasGrid = (ya, yb) => {
+    let okSamples = 0;
+    for (const f of [0.3, 0.5, 0.7]) {
+      const y = Math.round(ya + (yb - ya) * f);
+      let n = 0;
+      for (let c = 1; c < 7; c++) if (vline(cols[c], y)) n++;
+      if (n >= 4) okSamples++;
+    }
+    return okSamples >= 2;
+  };
   const rows = [];
   for (let i = 1; i < ys.length; i++) {
-    if (ys[i] - ys[i - 1] >= colW * 0.45) rows.push([ys[i - 1], ys[i]]);
+    if (ys[i] - ys[i - 1] >= colW * 0.45 && hasGrid(ys[i - 1], ys[i])) rows.push([ys[i - 1], ys[i]]);
   }
-  return { lines: ys, rows };
+  // 연속된 행만 사용 (가장 긴 연속 구간)
+  let best = [], cur = [];
+  for (const r of rows) {
+    if (cur.length && r[0] !== cur[cur.length - 1][1]) cur = [];
+    cur.push(r);
+    if (cur.length > best.length) best = [...cur];
+  }
+  return { lines: ys, rows: best };
 }
 
 // ───────────────────────── 칸 → 막대/텍스트 영역
@@ -156,18 +224,20 @@ function analyzeCell(img, g, x0, x1, y0, y1) {
 
   // 2) 막대별 색상 분류 + 가로 범위
   for (const bar of bars) {
-    let r = 0, gg = 0, b = 0, n = 0, bx0 = x1, bx1 = x0;
+    const rs = [], gs = [], bs = [];
+    let bx0 = x1, bx1 = x0;
     for (let y = bar.y0; y <= bar.y1; y++) {
       for (let x = x0; x < x1; x++) {
         const o = (y * W + x) * 4;
         if (isSaturated(data, o)) {
-          r += data[o]; gg += data[o + 1]; b += data[o + 2]; n++;
+          rs.push(data[o]); gs.push(data[o + 1]); bs.push(data[o + 2]);
           if (x < bx0) bx0 = x;
           if (x > bx1) bx1 = x;
         }
       }
     }
-    bar.rgb = [r / n, gg / n, b / n];
+    // 중앙값: 흰 글자와 섞인 경계 픽셀의 영향 제거
+    bar.rgb = [median(rs), median(gs), median(bs)];
     bar.type = classifyBar(bar.rgb);
     bar.x0 = bx0; bar.x1 = bx1;
   }
@@ -199,7 +269,7 @@ const OCR_PAD = 24;
 // 영역을 확대하고 "흰 바탕 + 검은 글자"로 정규화 (여백 포함)
 function renderRegion(srcCanvas, rect, invert, scale) {
   const w = rect.x1 - rect.x0 + 1, h = rect.y1 - rect.y0 + 1;
-  const sw = w * scale, sh = h * scale;
+  const sw = Math.round(w * scale), sh = Math.round(h * scale);
   const c = document.createElement('canvas');
   c.width = sw + OCR_PAD * 2; c.height = sh + OCR_PAD * 2;
   const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -213,7 +283,12 @@ function renderRegion(srcCanvas, rect, invert, scale) {
   // 배경 = 중앙값, 글자 = 상/하위 1.5% 밝기 → 그 사이를 0~255로 늘림
   const sample = Array.from(lum.filter((_, i) => i % 3 === 0)).sort((a, b) => a - b);
   const bg = sample[Math.floor(sample.length / 2)];
-  const text = invert ? sample[Math.floor(sample.length * 0.985)] : sample[Math.floor(sample.length * 0.015)];
+  const hi = sample[Math.floor(sample.length * 0.985)], lo = sample[Math.floor(sample.length * 0.015)];
+  // 글자가 배경보다 밝은지(파란 막대의 흰 글자, 다크 모드) 자동 판별. 애매하면 힌트(invert) 사용
+  const brightGap = hi - bg, darkGap = bg - lo;
+  if (brightGap > darkGap * 1.3) invert = true;
+  else if (darkGap > brightGap * 1.3) invert = false;
+  const text = invert ? hi : lo;
   const span = Math.max(30, Math.abs(text - bg) * 0.85);
   for (let i = 0; i < lum.length; i++) {
     const t = Math.min(1, Math.max(0, (invert ? lum[i] - bg : bg - lum[i]) / span));

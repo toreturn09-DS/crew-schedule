@@ -13,6 +13,7 @@ const state = {
   year: 0, month: 0,         // 보고 있는 달
   view: localStorage.getItem(VIEW_KEY) || 'calendar',
   draft: null,               // 가져오기 확인 중: { result, year, month, days }
+  draftQueue: [],            // PDF 여러 쪽: 확인 대기 중인 결과
 };
 
 function loadData() {
@@ -29,7 +30,7 @@ function saveData() {
 }
 
 function cleanItem(it) {
-  const { _raw, warnings, flightNos, ...rest } = it;
+  const { _raw, _uncertain, warnings, flightNos, ...rest } = it;
   return rest;
 }
 
@@ -461,13 +462,9 @@ async function importImage(file) {
   $('progress').hidden = false;
   const setP = (text, f) => { $('progressText').textContent = text; $('progressBar').style.width = `${Math.round(f * 100)}%`; };
   try {
-    const result = await analyzeScheduleImage(file, setP);
-    const y = result.year || state.year, m = result.month || state.month;
-    state.draft = { result, year: y, month: m, days: cellsToDays(result.cells, y, m), monthGuessed: !result.year };
-    state.year = y; state.month = m;
-    state.view = 'calendar';
-    render();
-    if (!result.year) toast('연/월을 인식하지 못했습니다. 위에서 선택해 주세요.');
+    // PDF는 달력이 있는 쪽마다 결과가 하나씩 → 차례로 확인
+    state.draftQueue = await analyzeScheduleFile(file, setP);
+    openNextDraft();
   } catch (e) {
     console.error(e);
     alert(`분석에 실패했습니다.\n${e.message || e}`);
@@ -475,6 +472,21 @@ async function importImage(file) {
     $('progress').hidden = true;
     $('fileInput').value = '';
   }
+}
+
+function openNextDraft() {
+  const result = state.draftQueue && state.draftQueue.shift();
+  if (!result) { state.draft = null; render(); return; }
+  const y = result.year || state.year, m = result.month || state.month;
+  state.draft = { result, year: y, month: m, days: cellsToDays(result.cells, y, m), monthGuessed: !result.year };
+  state.year = y; state.month = m;
+  state.view = 'calendar';
+  render();
+  const more = state.draftQueue.length ? ` (다음 달력 ${state.draftQueue.length}개 남음)` : '';
+  if (!result.year) toast('연/월을 인식하지 못했습니다. 위에서 선택해 주세요.' + more);
+  else if (result.lowRes) toast('캡처 해상도가 낮아 일부가 틀릴 수 있습니다. 달력을 확대해서 캡처하면 더 정확합니다.');
+  else if (result.source === 'pdf-text') toast('PDF 글자를 그대로 읽었습니다' + more);
+  else if (more) toast(more.trim());
 }
 
 function renderDraftBar() {
@@ -511,15 +523,13 @@ function saveDraft() {
   for (const k of existing) delete state.data.days[k];
   for (const [k, items] of Object.entries(d.days)) state.data.days[k] = items.map(cleanItem);
   saveData();
-  state.draft = null;
-  render();
   toast(`${d.year}년 ${d.month}월 스케줄을 저장했습니다`);
+  openNextDraft();
 }
 
 function cancelDraft() {
   if (!confirm('가져온 결과를 버릴까요?')) return;
-  state.draft = null;
-  render();
+  openNextDraft();
 }
 
 // 안드로이드 공유하기로 받은 이미지 (서비스워커가 캐시에 보관)
@@ -533,7 +543,8 @@ async function checkSharedImage() {
     if (!res) return;
     const blob = await res.blob();
     await cache.delete('shared-image');
-    importImage(blob);
+    const isPdf = blob.type === 'application/pdf';
+    importImage(new File([blob], isPdf ? 'shared.pdf' : 'shared-image', { type: blob.type }));
   } catch (e) {
     console.error(e);
   }
@@ -545,7 +556,7 @@ function openMenu() {
   openSheet(`
     <h2>메뉴</h2>
     <ul class="menu-list">
-      <li><button data-act="import">📷 스케줄 캡처 가져오기<small>달력 화면 전체가 보이게 캡처한 이미지</small></button></li>
+      <li><button data-act="import">📷 스케줄 가져오기<small>달력 캡처 이미지 또는 PDF</small></button></li>
       <li><button data-act="today">📅 이번 달로 이동</button></li>
       <li><button data-act="backup">💾 백업 파일 저장<small>휴대폰 교체·초기화 대비 (JSON)</small></button></li>
       <li><button data-act="restore">📂 백업 파일 불러오기</button></li>
@@ -573,8 +584,8 @@ function openHelp() {
   openSheet(`
     <h2>사용 방법</h2>
     <ol style="font-size:14px;line-height:1.6;padding-left:20px">
-      <li>회사 스케줄 화면에서 <b>한 달 달력 전체</b>가 보이게 캡처합니다. (연·월 제목 포함)</li>
-      <li><b>＋</b> 버튼 → 캡처 선택. 또는 갤러리에서 <b>공유 → 크루 스케줄</b>.</li>
+      <li>회사 스케줄 화면에서 <b>한 달 달력 전체</b>가 보이게 캡처합니다. (연·월 제목 포함) 스케줄 <b>PDF</b> 파일도 됩니다.</li>
+      <li><b>＋</b> 버튼 → 캡처/PDF 선택. 또는 갤러리·파일 앱에서 <b>공유 → 크루 스케줄</b>.</li>
       <li>가져온 결과를 확인합니다. <span style="color:var(--warn)">점선</span> 항목은 인식이 불확실하니 눌러서 고쳐 주세요.</li>
       <li><b>저장</b>을 누르면 휴대폰에만 저장됩니다. (서버로 전송되지 않음)</li>
     </ol>

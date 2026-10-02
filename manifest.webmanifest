@@ -18,6 +18,6 @@
     "action": "./share-target",
     "method": "POST",
     "enctype": "multipart/form-data",
-    "params": { "files": [{ "name": "image", "accept": ["image/*"] }] }
+    "params": { "files": [{ "name": "image", "accept": ["image/*", "application/pdf", ".pdf"] }] }
   }
 }
